@@ -1,0 +1,52 @@
+name: Dembux Android (APK)
+
+on:
+  push:
+    branches: [dembux-android]
+    paths: ["dembux-android/**", ".github/workflows/dembux-android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dembux-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Compiler l'APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Renommer
+        run: cp app/build/outputs/apk/debug/app-debug.apk ../Dembux.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dembux-apk
+          path: Dembux.apk
+
+      - name: Publier en téléchargement direct
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dembux-v${{ github.run_number }}
+          name: Dembux Android v${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Ouvre cette page sur ton téléphone et touche **Dembux.apk** pour l'installer.
+          files: Dembux.apk
