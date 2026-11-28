@@ -11,16 +11,32 @@ android {
         applicationId = "com.dembux.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
         buildConfigField("String", "SERVEUR", "\"https://quinte-flux-production.up.railway.app\"")
     }
 
     buildFeatures { buildConfig = true }
 
+    // Sur GitHub, la clé Dembux (gardée dans le cache privé) signe toujours l'APK :
+    // chaque nouvelle version s'installe par-dessus l'ancienne. En local, clé debug habituelle.
+    val cle = System.getenv("DEMBUX_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+    if (cle != null) {
+        signingConfigs {
+            create("dembux") {
+                storeFile = cle
+                storePassword = "android"
+                keyAlias = "dembux"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
-        // L'APK « debug » est signé automatiquement : il s'installe directement sur le téléphone.
-        debug { isMinifyEnabled = false }
+        debug {
+            isMinifyEnabled = false
+            if (cle != null) signingConfig = signingConfigs.getByName("dembux")
+        }
     }
 
     compileOptions {

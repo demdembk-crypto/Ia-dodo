@@ -28,11 +28,24 @@ jobs:
 
       # Même clé de signature à chaque compilation (gardée dans le cache privé de GitHub,
       # jamais dans le dépôt) : les mises à jour s'installent par-dessus l'ancienne version.
-      - name: Clé de signature Dembux
+      - name: Clé de signature Dembux (cache)
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: dembux-cle-signature-v1
+          path: ~/dembux-cle
+          key: dembux-cle-signature-v2
+
+      - name: Créer la clé si elle n'existe pas encore
+        run: |
+          mkdir -p ~/dembux-cle
+          if [ ! -f ~/dembux-cle/dembux.keystore ]; then
+            keytool -genkeypair -keystore ~/dembux-cle/dembux.keystore -alias dembux \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android -dname "CN=Dembux"
+            echo "Nouvelle clé créée"
+          else
+            echo "Clé existante réutilisée"
+          fi
+          echo "DEMBUX_KEYSTORE=$HOME/dembux-cle/dembux.keystore" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
