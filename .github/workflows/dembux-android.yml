@@ -26,6 +26,14 @@ jobs:
       - name: Vérifier le SDK Android déjà installé
         run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/platforms" | tail -3
 
+      # Même clé de signature à chaque compilation (gardée dans le cache privé de GitHub,
+      # jamais dans le dépôt) : les mises à jour s'installent par-dessus l'ancienne version.
+      - name: Clé de signature Dembux
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: dembux-cle-signature-v1
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
