@@ -1,7 +1,13 @@
 package com.dembux.app
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.net.Uri
+import android.webkit.WebResourceRequest
+import android.webkit.WebStorage
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
@@ -59,7 +65,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_ECOUTER, false) && token != null && ::micro.isInitialized) ecouter()
+        if (intent.getBooleanExtra(EXTRA_ECOUTER, false) && token != null && ::micro.isInitialized) { montrer(true); ecouter() }
     }
 
     override fun onInit(status: Int) {
@@ -122,7 +128,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         entete.addView(texte("Dembux", 26f, true, R.color.accent), LinearLayout.LayoutParams(0, -2, 1f))
         entete.addView(texte("Se déconnecter", 13f, false, R.color.gris).apply {
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            setOnClickListener { token = null; chat.clear(); ecranCode() }
+            setOnClickListener {
+                token = null; chat.clear()
+                WebStorage.getInstance().deleteAllData()
+                web?.destroy(); web = null
+                ecranCode()
+            }
         })
         racine.addView(entete)
 
@@ -166,9 +177,84 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
         racine.addView(ligne)
 
-        setContentView(racine)
+        // --- Onglet « Quinté & Suivi » : toute l'interface du site, déjà connectée ---
+        web = creerWeb()
+
+        val contenu = FrameLayout(this)
+        contenu.addView(web, FrameLayout.LayoutParams(-1, -1))
+        contenu.addView(racine, FrameLayout.LayoutParams(-1, -1))
+        vueParler = racine
+
+        val barre = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(getColor(R.color.carte))
+        }
+        ongletSite = ongletBouton("Quinté & Suivi") { montrer(false) }
+        ongletVoix = ongletBouton("🎙 Parler") { montrer(true) }
+        barre.addView(ongletSite, LinearLayout.LayoutParams(0, dp(56), 1f))
+        barre.addView(ongletVoix, LinearLayout.LayoutParams(0, dp(56), 1f))
+
+        val ecran = colonne()
+        ecran.addView(contenu, LinearLayout.LayoutParams(-1, 0, 1f))
+        ecran.addView(barre, LinearLayout.LayoutParams(-1, -2))
+        setContentView(ecran)
+
+        val voixDabord = ecouterAuDemarrage || prefs.getBoolean("ongletVoix", false)
+        montrer(voixDabord)
 
         if (ecouterAuDemarrage) { ecouterAuDemarrage = false; micro.post { ecouter() } }
+    }
+
+    private var web: WebView? = null
+    private var vueParler: View? = null
+    private var ongletSite: TextView? = null
+    private var ongletVoix: TextView? = null
+
+    private fun ongletBouton(titre: String, action: () -> Unit) = texte(titre, 15f, true, R.color.gris).apply {
+        gravity = Gravity.CENTER
+        setOnClickListener { action() }
+    }
+
+    private fun montrer(voix: Boolean) {
+        vueParler?.visibility = if (voix) View.VISIBLE else View.GONE
+        web?.visibility = if (voix) View.GONE else View.VISIBLE
+        ongletVoix?.setTextColor(getColor(if (voix) R.color.accent else R.color.gris))
+        ongletSite?.setTextColor(getColor(if (voix) R.color.gris else R.color.accent))
+        prefs.edit().putBoolean("ongletVoix", voix).apply()
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun creerWeb(): WebView = WebView(this).apply {
+        setBackgroundColor(getColor(R.color.fond))
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.mediaPlaybackRequiresUserGesture = false
+        webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                // Donne au site le même accès que l'app : pas besoin de retaper le code.
+                val t = token ?: return
+                if (!t.matches(Regex("[0-9a-f.]+"))) return
+                view.evaluateJavascript(
+                    "(function(){var t=JSON.stringify('$t');" +
+                        "if(localStorage.getItem('as_token')!==t){localStorage.setItem('as_token',t);location.reload();}})()",
+                    null
+                )
+            }
+            override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean {
+                // Les liens extérieurs (sources) s'ouvrent dans le navigateur.
+                if (req.url.host == Uri.parse(BuildConfig.SERVEUR).host) return false
+                try { startActivity(Intent(Intent.ACTION_VIEW, req.url)) } catch (_: Exception) {}
+                return true
+            }
+        }
+        loadUrl(BuildConfig.SERVEUR)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        val w = web
+        if (w != null && w.visibility == View.VISIBLE && w.canGoBack()) w.goBack()
+        else @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     private fun envoyerSaisie() {
