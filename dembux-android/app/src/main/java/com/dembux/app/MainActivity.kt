@@ -35,6 +35,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     companion object {
         const val EXTRA_ECOUTER = "ecouter"
         private const val PERM_MICRO = 1
+        private const val PERM_CONTACTS = 2
     }
 
     private val prefs by lazy { getSharedPreferences("dembux", MODE_PRIVATE) }
@@ -232,6 +233,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
                 // Donne au site le même accès que l'app : pas besoin de retaper le code.
+                // Récupère les consignes écrites dans Réglages pour l'onglet Parler.
+                view.evaluateJavascript("localStorage.getItem('as_consigne')") { v ->
+                    val c = try { if (v == null || v == "null") "" else org.json.JSONObject("{\"v\":$v}").optString("v") } catch (e: Exception) { "" }
+                    val propre = try { if (c.startsWith("\"")) org.json.JSONObject("{\"v\":$c}").optString("v") else c } catch (e: Exception) { c }
+                    prefs.edit().putString("consigne", propre).apply()
+                }
                 val t = token ?: return
                 if (!t.matches(Regex("[0-9a-f.]+"))) return
                 view.evaluateJavascript(
@@ -292,6 +299,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERM_CONTACTS) {
+            val act = Actions.enAttente
+            Actions.enAttente = null
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED && act != null) lancerAction(act)
+            else statut.text = "Sans accès aux contacts, donne-moi directement le numéro."
+            return
+        }
         if (requestCode == PERM_MICRO) {
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) ecouter()
             else statut.text = "Autorise le micro pour parler à Dembux (Réglages > Applis > Dembux)."
@@ -357,13 +371,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         statut.text = "Dembux réfléchit…"
         Thread {
             try {
-                val rep = Api.discuter(t, chat, prefs.getString("consigne", "") ?: "")
+                val perso = prefs.getString("consigne", "") ?: ""
+                val consigne = (Actions.CONSIGNE + if (perso.isNotBlank()) "\n$perso" else "").take(600)
+                val brut = Api.discuter(t, chat, consigne)
+                val (rep, action) = Actions.extraire(brut)
                 runOnUiThread {
                     enAttente = false
-                    val r = Message("assistant", rep)
+                    val texteRep = rep.ifEmpty { "C'est fait." }
+                    val r = Message("assistant", texteRep)
                     chat.add(r); bulle(r)
                     statut.text = "Appuie et parle"
-                    parler(rep)
+                    parler(texteRep)
+                    if (action != null) lancerAction(action)
                 }
             } catch (e: ErreurDembux) {
                 runOnUiThread {
@@ -376,6 +395,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 runOnUiThread { enAttente = false; chat.removeAt(chat.lastIndex); statut.text = "Erreur : ${e.message}" }
             }
         }.start()
+    }
+
+    private fun lancerAction(action: org.json.JSONObject) {
+        val err = Actions.executer(this, action) {
+            requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), PERM_CONTACTS)
+        }
+        if (err != null) { statut.text = err; parler(err) }
     }
 
     private fun bulle(m: Message) {
