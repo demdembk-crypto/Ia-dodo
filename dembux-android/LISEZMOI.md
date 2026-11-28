@@ -11,3 +11,5 @@ L'APK est compilé automatiquement par GitHub (onglet Actions) à chaque modific
 et publié dans les Releases du dépôt (fichier `Dembux.apk`).
 
 À venir : mot d'éveil « Turfiste » (nécessite une clé Picovoice).
+
+Signature : une seule clé, créée une fois sur GitHub, pour que les mises à jour s'installent par-dessus.
